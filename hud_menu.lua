@@ -26,14 +26,38 @@ screenGui.IgnoreGuiInset = true
 screenGui.DisplayOrder = 100
 screenGui.Parent = playerGui
 
+-- Lớp phủ mờ phía sau menu (backdrop) — chạm vào để đóng, tạo chiều sâu
+local backdrop = Instance.new("Frame")
+backdrop.Name = "Backdrop"
+backdrop.Size = UDim2.new(1, 0, 1, 0)
+backdrop.Position = UDim2.new(0, 0, 0, 0)
+backdrop.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+backdrop.BackgroundTransparency = 1
+backdrop.BorderSizePixel = 0
+backdrop.Visible = false
+backdrop.ZIndex = 1
+backdrop.Parent = screenGui
+
+local backdropClose = Instance.new("TextButton")
+backdropClose.Size = UDim2.new(1, 0, 1, 0)
+backdropClose.BackgroundTransparency = 1
+backdropClose.Text = ""
+backdropClose.ZIndex = 1
+backdropClose.Parent = backdrop
+
+-- Khung menu chính — bố cục NGANG, neo giữa màn hình để phóng to/thu nhỏ từ tâm
+local MENU_WIDTH, MENU_HEIGHT = 560, 340
+
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 320, 0, 420)
-mainFrame.Position = UDim2.new(0.5, -160, 0.5, -210)
+mainFrame.Size = UDim2.new(0, MENU_WIDTH, 0, MENU_HEIGHT)
+mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
 mainFrame.BorderSizePixel = 0
 mainFrame.Visible = false
 mainFrame.ClipsDescendants = true
+mainFrame.ZIndex = 2
 mainFrame.Parent = screenGui
 
 local mainCorner = Instance.new("UICorner")
@@ -44,6 +68,11 @@ local mainStroke = Instance.new("UIStroke")
 mainStroke.Color = Color3.fromRGB(70, 70, 90)
 mainStroke.Thickness = 1.5
 mainStroke.Parent = mainFrame
+
+-- UIScale điều khiển hiệu ứng phóng to / thu nhỏ từ tâm (không trượt)
+local uiScale = Instance.new("UIScale")
+uiScale.Scale = 0
+uiScale.Parent = mainFrame
 
 -- Thanh tiêu đề
 local titleBar = Instance.new("Frame")
@@ -107,10 +136,11 @@ do
 end
 
 -- Cột tab bên trái
+local TAB_WIDTH = 150
 local tabList = {"Trang chủ", "Cài đặt", "Thông tin"}
 local tabContainer = Instance.new("Frame")
 tabContainer.Name = "TabContainer"
-tabContainer.Size = UDim2.new(0, 96, 1, -44)
+tabContainer.Size = UDim2.new(0, TAB_WIDTH, 1, -44)
 tabContainer.Position = UDim2.new(0, 0, 0, 44)
 tabContainer.BackgroundColor3 = Color3.fromRGB(22, 22, 27)
 tabContainer.BorderSizePixel = 0
@@ -128,8 +158,8 @@ tabPadding.Parent = tabContainer
 -- Vùng nội dung bên phải
 local contentArea = Instance.new("Frame")
 contentArea.Name = "ContentArea"
-contentArea.Size = UDim2.new(1, -96, 1, -44)
-contentArea.Position = UDim2.new(0, 96, 0, 44)
+contentArea.Size = UDim2.new(1, -TAB_WIDTH, 1, -44)
+contentArea.Position = UDim2.new(0, TAB_WIDTH, 0, 44)
 contentArea.BackgroundTransparency = 1
 contentArea.Parent = mainFrame
 
@@ -270,32 +300,41 @@ do
     end)
 end
 
--- ============ HIỆU ỨNG MỞ / ĐÓNG ============
+-- ============ HIỆU ỨNG MỞ / ĐÓNG: PHÓNG TO TỪ TÂM (KHÔNG TRƯỢT) ============
 local isOpen = false
 local isAnimating = false
+
+local OPEN_INFO  = TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+local CLOSE_INFO = TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+local FADE_INFO  = TweenInfo.new(0.22, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
 
 local function openMenu()
     if isOpen or isAnimating then return end
     isAnimating = true
     isOpen = true
+
+    uiScale.Scale = 0
     mainFrame.Visible = true
-    mainFrame.Size = UDim2.new(0, 320, 0, 0)
-    TweenService:Create(mainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-        Size = UDim2.new(0, 320, 0, 420)
-    }):Play()
-    task.delay(0.25, function() isAnimating = false end)
+    backdrop.Visible = true
+    backdrop.BackgroundTransparency = 1
+
+    TweenService:Create(uiScale, OPEN_INFO, {Scale = 1}):Play()
+    TweenService:Create(backdrop, FADE_INFO, {BackgroundTransparency = 0.45}):Play()
+
+    task.delay(OPEN_INFO.Time, function() isAnimating = false end)
 end
 
 local function closeMenu()
     if not isOpen or isAnimating then return end
     isAnimating = true
     isOpen = false
-    local tween = TweenService:Create(mainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
-        Size = UDim2.new(0, 320, 0, 0)
-    })
+
+    local tween = TweenService:Create(uiScale, CLOSE_INFO, {Scale = 0})
+    TweenService:Create(backdrop, CLOSE_INFO, {BackgroundTransparency = 1}):Play()
     tween:Play()
     tween.Completed:Connect(function()
         mainFrame.Visible = false
+        backdrop.Visible = false
         isAnimating = false
     end)
 end
@@ -307,6 +346,9 @@ local function toggleMenu()
         openMenu()
     end
 end
+
+-- Chạm ra ngoài (vào backdrop) cũng đóng menu lại
+backdropClose.MouseButton1Click:Connect(closeMenu)
 
 -- ============ NHẬN DIỆN GESTURE: 3 NGÓN x 3 LẦN ============
 UserInputService.TouchTap:Connect(function(touchPositions, gameProcessedEvent)
