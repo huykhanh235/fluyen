@@ -97,7 +97,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -20, 1, 0)
 titleLabel.Position = UDim2.new(0, 16, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "MENU"
+titleLabel.Text = "FLUYEN"
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 16
 titleLabel.TextColor3 = Color3.fromRGB(240, 240, 245)
@@ -242,25 +242,23 @@ end
 
 selectTab(tabList[1], buttons)
 
--- Nội dung ví dụ cho trang "Cài đặt": một toggle mẫu
-do
-    local settingsPage = pages["Cài đặt"]
-
+-- Hàm dùng chung: tạo 1 dòng có nút gạt (toggle) để test bật/tắt
+local function addToggleRow(page, label, layoutOrder, defaultOn)
     local row = Instance.new("Frame")
     row.Size = UDim2.new(1, 0, 0, 36)
     row.BackgroundTransparency = 1
-    row.LayoutOrder = 1
-    row.Parent = settingsPage
+    row.LayoutOrder = layoutOrder
+    row.Parent = page
 
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, -60, 1, 0)
-    label.BackgroundTransparency = 1
-    label.Text = "Ví dụ tuỳ chọn"
-    label.Font = Enum.Font.Gotham
-    label.TextSize = 14
-    label.TextColor3 = Color3.fromRGB(220, 220, 225)
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = row
+    local labelText = Instance.new("TextLabel")
+    labelText.Size = UDim2.new(1, -60, 1, 0)
+    labelText.BackgroundTransparency = 1
+    labelText.Text = label
+    labelText.Font = Enum.Font.Gotham
+    labelText.TextSize = 14
+    labelText.TextColor3 = Color3.fromRGB(220, 220, 225)
+    labelText.TextXAlignment = Enum.TextXAlignment.Left
+    labelText.Parent = row
 
     local toggleBg = Instance.new("Frame")
     toggleBg.Size = UDim2.new(0, 46, 0, 24)
@@ -289,16 +287,40 @@ do
     toggleBtn.Parent = toggleBg
 
     local state = false
+
+    local function applyState(animated)
+        local knobGoal = state and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)
+        local bgGoal = state and Color3.fromRGB(70, 110, 255) or Color3.fromRGB(50, 50, 58)
+        if animated then
+            TweenService:Create(knob, TweenInfo.new(0.15), {Position = knobGoal}):Play()
+            TweenService:Create(toggleBg, TweenInfo.new(0.15), {BackgroundColor3 = bgGoal}):Play()
+        else
+            knob.Position = knobGoal
+            toggleBg.BackgroundColor3 = bgGoal
+        end
+    end
+
+    if defaultOn then
+        state = true
+        applyState(false)
+    end
+
     toggleBtn.MouseButton1Click:Connect(function()
         state = not state
-        TweenService:Create(knob, TweenInfo.new(0.15), {
-            Position = state and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)
-        }):Play()
-        TweenService:Create(toggleBg, TweenInfo.new(0.15), {
-            BackgroundColor3 = state and Color3.fromRGB(70, 110, 255) or Color3.fromRGB(50, 50, 58)
-        }):Play()
+        applyState(true)
     end)
+
+    return row
 end
+
+-- Nội dung test cho từng tab — để không trang nào bị trống trơn khi mở lên
+addToggleRow(pages["Trang chủ"], "Hiển thị nhanh", 1, true)
+addToggleRow(pages["Trang chủ"], "Tự động ẩn", 2, false)
+
+addToggleRow(pages["Cài đặt"], "Ví dụ tuỳ chọn", 1, false)
+addToggleRow(pages["Cài đặt"], "Rung khi chạm", 2, true)
+
+addToggleRow(pages["Thông tin"], "Thông báo cập nhật", 1, false)
 
 -- ============ HIỆU ỨNG MỞ / ĐÓNG: PHÓNG TO TỪ TÂM (KHÔNG TRƯỢT) ============
 local isOpen = false
@@ -351,25 +373,49 @@ end
 backdropClose.MouseButton1Click:Connect(closeMenu)
 
 -- ============ NHẬN DIỆN GESTURE: 3 NGÓN x 3 LẦN ============
-UserInputService.TouchTap:Connect(function(touchPositions, gameProcessedEvent)
+-- Đếm số ngón đang thực sự chạm màn hình (TouchStarted/TouchEnded) thay vì
+-- dùng TouchTap — vì TouchTap chỉ tính là "tap" khi ngón hoàn toàn không
+-- di chuyển. Cách này chỉ quan tâm thời điểm đủ 3 ngón cùng chạm xuống,
+-- nên dù tay có hơi trượt/di chuyển sau đó, gesture vẫn được ghi nhận.
+local activeTouches = {}
+local activeCount = 0
+local reachedRequired = false -- tránh đếm lặp khi vẫn còn giữ đủ 3 ngón
+
+local function onGestureTap()
+    local now = os.clock()
+
+    if now - lastTapTime > TAP_WINDOW then
+        tapCount = 0
+    end
+
+    tapCount += 1
+    lastTapTime = now
+
+    if tapCount >= REQUIRED_TAPS then
+        tapCount = 0
+        toggleMenu()
+    end
+end
+
+UserInputService.TouchStarted:Connect(function(touch, gameProcessedEvent)
     if gameProcessedEvent then return end
 
-    if #touchPositions == REQUIRED_FINGERS then
-        local now = os.clock()
+    activeTouches[touch] = true
+    activeCount += 1
 
-        if now - lastTapTime > TAP_WINDOW then
-            tapCount = 0
-        end
+    if activeCount == REQUIRED_FINGERS and not reachedRequired then
+        reachedRequired = true
+        onGestureTap()
+    end
+end)
 
-        tapCount += 1
-        lastTapTime = now
+UserInputService.TouchEnded:Connect(function(touch, _gameProcessedEvent)
+    if activeTouches[touch] then
+        activeTouches[touch] = nil
+        activeCount = math.max(0, activeCount - 1)
+    end
 
-        if tapCount >= REQUIRED_TAPS then
-            tapCount = 0
-            toggleMenu()
-        end
-    else
-        -- chạm sai số ngón thì reset đếm, tránh nhận nhầm
-        tapCount = 0
+    if activeCount < REQUIRED_FINGERS then
+        reachedRequired = false
     end
 end)
